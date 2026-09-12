@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "channels": [
+    {
+      "name": "monitor-reputacion-2",
+      "displayName": "Monitor de reputacion 2",
+      "providers": {
+        "slack": {
+          "env": {
+            "botToken": "INTELLIGENCE_CHANNEL_MONITOR_REPUTACION_2_SLACK_BOT_TOKEN",
+            "signingSecret": "INTELLIGENCE_CHANNEL_MONITOR_REPUTACION_2_SLACK_SIGNING_SECRET"
+          }
+        }
+      }
+    }
+  ]
+}

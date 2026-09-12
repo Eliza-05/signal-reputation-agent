@@ -43,14 +43,63 @@ export type CompleteFn = (input: {
   signal?: AbortSignal;
 }) => Promise<string>;
 
-export const complete: CompleteFn = async ({ system, prompt, signal }) => {
-  const { text } = await generateText({
-    model: resolveLanguageModel(),
-    system,
-    prompt,
-    abortSignal: signal,
+/**
+ * A rate-limited provider is not a broken one — it is a provider asking us to
+ * slow down. Free and new accounts are commonly capped around 20 requests per
+ * minute, and this pipeline classifies every mention independently, so a burst
+ * is the normal case rather than the exception.
+ *
+ * Retrying is what keeps that from surfacing as "Something went wrong" in a
+ * Slack thread. Anything that is not a rate limit is thrown immediately: a bad
+ * key or a wrong model slug will not fix itself, and retrying it just makes the
+ * user wait longer for the same error.
+ */
+const RATE_LIMIT_RETRIES = 4;
+const RATE_LIMIT_BASE_DELAY_MS = 4_000;
+
+function isRateLimit(error: unknown): boolean {
+  const status = (error as { statusCode?: number; status?: number } | null)?.statusCode ??
+    (error as { status?: number } | null)?.status;
+  if (status === 429) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /rate limit|429|too many requests/i.test(message);
+}
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new Error("Aborted while waiting out a rate limit."));
+      },
+      { once: true },
+    );
   });
-  return text;
+
+export const complete: CompleteFn = async ({ system, prompt, signal }) => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt += 1) {
+    try {
+      const { text } = await generateText({
+        model: resolveLanguageModel(),
+        system,
+        prompt,
+        abortSignal: signal,
+      });
+      return text;
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimit(error) || attempt === RATE_LIMIT_RETRIES) throw error;
+      // Exponential backoff with jitter, so retries from a batch that was
+      // throttled together do not all come back at the same instant and
+      // throttle each other again.
+      const delay = RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt + Math.random() * 1_000;
+      await sleep(delay, signal);
+    }
+  }
+  throw lastError;
 };
 
 /**

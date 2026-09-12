@@ -28,6 +28,42 @@ export interface ComplaintQuery {
   /** ISO 639-1 code of the query's language. */
   language: string;
   theme: ComplaintTheme;
+  /** Pin the query to these hosts. Guarantees a source outside the vendor. */
+  includeDomains?: string[];
+  /** Keep the query away from these hosts. Used to push past the vendor forum. */
+  excludeDomains?: string[];
+}
+
+/** Third-party review sites: the customer's side of the story, not the vendor's. */
+const REVIEW_SITES = [
+  "trustpilot.com",
+  "g2.com",
+  "capterra.com",
+  "getapp.com",
+  "sitejabber.com",
+];
+
+/** General communities, where people complain without the vendor moderating. */
+const COMMUNITY_SITES = [
+  "reddit.com",
+  "news.ycombinator.com",
+  "quora.com",
+  "stackoverflow.com",
+];
+
+/**
+ * Guess the vendor's own domain from its name — "Zapier" → "zapier.com".
+ *
+ * A heuristic, and deliberately a cheap one: a wrong guess excludes a domain
+ * that was never going to appear, which costs nothing. A right guess is what
+ * stops the whole sweep collapsing onto the vendor's own support forum.
+ */
+export function vendorDomains(company: string): string[] {
+  const slug = company
+    .normalize("NFD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  return slug ? [`${slug}.com`] : [];
 }
 
 /**
@@ -48,36 +84,50 @@ export function buildComplaintQueries(company: string): ComplaintQuery[] {
   if (!name) {
     throw new Error("A company name is required to build complaint queries.");
   }
+  const vendor = vendorDomains(name);
   return [
+    // Pinned off-vendor. Without these the sweep lands entirely on the
+    // company's own community forum: semantic search matches the densest
+    // page about a product, and that is always the vendor's own support site.
     {
       language: "en",
       theme: "technical",
-      query: `${name} users complaining on forums about bugs, errors, app not working or data loss`,
+      query: `${name} bugs, errors, app not working or data loss — users complaining`,
+      includeDomains: COMMUNITY_SITES,
     },
     {
       language: "en",
       theme: "billing",
-      query: `${name} customers complaining about being charged twice, unexpected fees, refund refused or cancellation still billed`,
+      query: `${name} review: charged twice, unexpected fees, refund refused, cancelled but still billed`,
+      includeDomains: REVIEW_SITES,
     },
+    // One unrestricted query. The vendor's forum carries real complaints and
+    // should not be banned outright — it just must not be the only source.
     {
       language: "en",
       theme: "support",
       query: `${name} customer support complaints: no response from support, account locked, ticket ignored`,
     },
+    // Non-English, pushed off the vendor domain. The vendor forum is almost
+    // entirely English, so leaving it in returns English posts for a Spanish
+    // query — which looks like multilingual coverage while delivering none.
     {
       language: "es",
       theme: "billing",
-      query: `quejas de usuarios de ${name} en foros: cobro duplicado, no me devuelven el dinero, me siguen cobrando tras cancelar`,
+      query: `opiniones y quejas sobre ${name}: cobro duplicado, no me devuelven el dinero, me siguen cobrando tras cancelar`,
+      excludeDomains: vendor,
     },
     {
       language: "pt",
       theme: "technical",
-      query: `reclamações de usuários de ${name} em fóruns: aplicativo com erro, não consigo acessar, perdi meus dados`,
+      query: `reclamações sobre ${name} em fóruns: aplicativo com erro, não consigo acessar, perdi meus dados`,
+      excludeDomains: vendor,
     },
     {
       language: "de",
       theme: "support",
-      query: `${name} Nutzer beschweren sich im Forum: Support antwortet nicht, Konto gesperrt, Problem ungelöst`,
+      query: `${name} Erfahrungen und Beschwerden: Support antwortet nicht, Konto gesperrt, Problem ungelöst`,
+      excludeDomains: vendor,
     },
   ];
 }
@@ -105,7 +155,14 @@ function dedupeKey(url: string): string {
 
 export interface ComplaintSweepArgs {
   company: string;
-  /** Results per query, not in total. Six queries, so keep it small. */
+  /**
+   * Results per query, not in total. There are six queries, and every hit
+   * becomes one model call in classification, so this number multiplies by six
+   * into the provider's rate limit. At 2 a full sweep stays near a dozen
+   * mentions, which fits inside the ~20 requests per minute that new and free
+   * accounts allow. Raise it when the account's limits are higher — more
+   * mentions is strictly better evidence.
+   */
   resultsPerQuery?: number;
 }
 
@@ -119,7 +176,7 @@ export interface ComplaintSweepArgs {
  */
 export async function searchComplaints({
   company,
-  resultsPerQuery = 5,
+  resultsPerQuery = 2,
 }: ComplaintSweepArgs): Promise<ComplaintHit[] | string> {
   const apiKey = process.env.EXA_API_KEY;
   if (!apiKey) {
@@ -130,11 +187,13 @@ export async function searchComplaints({
   const exa = new Exa(apiKey);
 
   const settled = await Promise.allSettled(
-    queries.map(async ({ query, language, theme }) => {
+    queries.map(async ({ query, language, theme, includeDomains, excludeDomains }) => {
       const response = await exa.searchAndContents(query, {
         type: SEARCH_TYPE,
         numResults: resultsPerQuery,
         highlights: { numSentences: 2, highlightsPerUrl: 1 },
+        ...(includeDomains?.length ? { includeDomains } : {}),
+        ...(excludeDomains?.length ? { excludeDomains } : {}),
       });
       return response.results.map((hit) => ({
         title: hit.title ?? hit.url,

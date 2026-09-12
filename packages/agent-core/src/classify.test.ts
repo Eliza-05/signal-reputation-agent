@@ -82,6 +82,56 @@ describe("classifyMention", () => {
 });
 
 describe("classifyMentions", () => {
+  it("never exceeds the concurrency limit, so a burst cannot trip a rate limit", async () => {
+    // This is what produced "Rate limit exceeded" in Slack: every mention fired
+    // at once against an account capped near 20 requests per minute.
+    const mentions: RawMention[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `m${index}`,
+      text: "queja",
+      origin: "busqueda" as const,
+    }));
+
+    let inFlight = 0;
+    let peak = 0;
+    const { classified } = await classifyMentions(mentions, {
+      ...options,
+      concurrency: 3,
+      complete: async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return JSON.stringify(valid);
+      },
+    });
+
+    assert.equal(classified.length, 12, "every mention must still be classified");
+    assert.ok(peak <= 3, `expected at most 3 concurrent calls, saw ${peak}`);
+  });
+
+  it("keeps results aligned with their mentions when some fail mid-pool", async () => {
+    // A worker pool writes results out of order; an off-by-one here would
+    // attribute one mention's classification to another.
+    const mentions: RawMention[] = Array.from({ length: 6 }, (_, index) => ({
+      id: `m${index}`,
+      text: `texto-${index}`,
+      origin: "busqueda" as const,
+    }));
+
+    const { classified, failures } = await classifyMentions(mentions, {
+      ...options,
+      concurrency: 2,
+      complete: async ({ prompt }) =>
+        /texto-[13]\b/.test(prompt) ? "no json" : JSON.stringify(valid),
+    });
+
+    assert.deepEqual(failures.map((f) => f.id).sort(), ["m1", "m3"]);
+    assert.deepEqual(
+      classified.map((m) => m.id).sort(),
+      ["m0", "m2", "m4", "m5"],
+    );
+  });
+
   it("keeps the good mentions and reports the failed ones instead of hiding them", async () => {
     const mentions: RawMention[] = [
       { id: "ok1", text: "a", origin: "busqueda" },

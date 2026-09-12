@@ -37,27 +37,58 @@ Shape:
   one, and never drop a mention: every input id must appear in exactly one
   group, and no id may appear twice.
 
-THE RULE THAT MATTERS MOST — when in doubt, split.
+THE RULE THAT MATTERS MOST — group by the FUNCTIONAL problem, not the wording.
 
-Two mentions belong together only if they describe the same specific failure,
-not merely the same general subject. Shared category is not shared problem.
+Ask one question about any two mentions: **would the same fix resolve both?**
+If one engineering change or one policy change would make both users stop
+complaining, they are one group, no matter how differently they described it.
 
-  Not a group: "billing is confusing" + "the invoice arrived late"
-               — both about billing, different failures.
-  A group:     "charged again after I cancelled" + "cobro tras cancelar la
-               suscripción" — the same specific failure, two languages.
-  Not a group: "the app is slow" + "the app crashes on login"
-               — both about the app, different failures.
+Users describe the same failure in wildly different words. "Charged twice",
+"charged again after cancelling", "multiple charges when my account update
+failed", "you keep taking money after I closed my account" are four ways of
+saying money left an account that should not have. That is ONE group. Fixing
+the cancellation and charging path fixes all four.
 
-A mention with no genuine partner becomes its own group with exactly one id.
-That is the correct, expected outcome for most mentions, not a failure on your
-part. Most complaints are not part of a pattern. Do not stretch a description
-to make two unrelated mentions fit under it, and do not build a vague group to
-avoid leaving mentions alone.
+Do NOT split because:
+  - one says "duplicate" and another says "multiple" or "again"
+  - they describe different amounts, dates, plans, or countries
+  - one blames cancellation and another blames a failed account update, while
+    the outcome — an unwanted charge — is the same
+  - they are written in different languages
+  - one is angry and another is factual
+  - one came from the channel and another from a web search
 
-The reason is not tidiness. A group that should not exist raises an alert that
-should not exist, and a team that learns your alerts are noise will stop reading
-them. A single mention sitting by itself costs nothing.
+These ARE one group:
+  ✓ "charged after cancelling" + "cobro duplicado de la suscripción" +
+    "múltiples cobros al fallar la actualización de cuenta"
+    → one group: unwanted charges around cancellation or account changes.
+  ✓ "the app won't open since the update" + "crashes on launch on Android"
+    → one group: the app fails to start.
+  ✓ "support never replied" + "mi ticket lleva tres semanas sin respuesta"
+    → one group: support does not respond.
+
+These are NOT one group:
+  ✗ "I can't log in, it says wrong password" + "charged twice this month"
+    → authentication and billing are different systems and different fixes.
+  ✗ "the app is slow to load" + "the app crashes on login"
+    → degraded performance is not a crash; different fixes.
+  ✗ "I want a dark mode" + "the dark theme has a contrast bug"
+    → a feature request is not a defect.
+
+So the line is: same underlying failure, one group, however differently worded.
+Different underlying failure — a different subsystem, a different fix — separate
+groups, however similar the words.
+
+A mention with no genuine partner still becomes its own group with exactly one
+id. That remains a correct outcome, not a failure on your part. But do not
+manufacture singletons out of mentions that plainly share a cause: eleven
+mentions becoming eleven groups means you grouped on phrasing, which is exactly
+what you must not do.
+
+The cost runs both ways. A group that should not exist raises a false alert and
+teaches the team to ignore you. But splitting one real problem into five groups
+hides it: each fragment falls under the threshold, and a genuine incident is
+reported as five unrelated grumbles.
 
 Where a mention came from — a web search or a teammate pasting it into the
 channel — is irrelevant to grouping. Group only on the failure described.

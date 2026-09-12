@@ -54,7 +54,19 @@ export interface ClassifyOptions {
   /** Injected in tests so they never need a model or a network. */
   complete?: CompleteFn;
   signal?: AbortSignal;
+  /**
+   * How many mentions to classify at once.
+   *
+   * Classification is one independent call per mention, so the naive version
+   * fires all of them simultaneously — and a new or free provider account,
+   * commonly capped near 20 requests per minute, rejects the whole burst. A
+   * small pool keeps a 30-mention sweep inside those limits. Raise it when the
+   * account's limits are higher; the work is embarrassingly parallel.
+   */
+  concurrency?: number;
 }
+
+const DEFAULT_CONCURRENCY = 3;
 
 export async function classifyMention(
   mention: RawMention,
@@ -99,20 +111,36 @@ export async function classifyMentions(
   mentions: RawMention[],
   options: ClassifyOptions,
 ): Promise<ClassifyBatchResult> {
-  const settled = await Promise.allSettled(
-    mentions.map((mention) => classifyMention(mention, options)),
-  );
+  const limit = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
+  const settled: PromiseSettledResult<ClassifiedMention>[] = new Array(mentions.length);
+
+  // A fixed pool of workers pulling from a shared cursor: steady pressure on the
+  // provider instead of one burst, and a slow mention never blocks the others
+  // the way fixed-size batches would.
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < mentions.length) {
+      const index = cursor++;
+      const mention = mentions[index]!;
+      try {
+        settled[index] = { status: "fulfilled", value: await classifyMention(mention, options) };
+      } catch (reason) {
+        settled[index] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, mentions.length) }, worker));
 
   const classified: ClassifiedMention[] = [];
   const failures: { id: string; reason: string }[] = [];
 
   settled.forEach((outcome, index) => {
-    if (outcome.status === "fulfilled") {
+    if (outcome?.status === "fulfilled") {
       classified.push(outcome.value);
     } else {
       failures.push({
         id: mentions[index]!.id,
-        reason: String(outcome.reason),
+        reason: String(outcome?.reason ?? "unknown failure"),
       });
     }
   });

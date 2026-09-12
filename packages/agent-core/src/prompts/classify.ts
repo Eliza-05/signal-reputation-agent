@@ -66,10 +66,18 @@ Fields, all required:
   the only thing used to match this mention against mentions written in other
   languages, so two people hitting the same wall in different languages must
   produce the same phrase.
-    Good: "charged again after cancelling subscription"
-    Good: "mobile app crashes on login"
+  Name the failure at the level of what would FIX it, not at the level of how
+  this one person happened to hit it. If two users would be satisfied by the
+  same fix, they must produce the same phrase. "Charged twice", "charged after
+  cancelling", and "charged again when my account update failed" are all one
+  failure — an unwanted charge — and all three should come out as
+  "unwanted charge after cancellation or account change".
+    Good: "unwanted charge after cancellation or account change"
+    Good: "mobile app crashes on launch"
     Bad:  "Maria was charged 49 EUR twice on March 3"   (personal details)
     Bad:  "billing problem"                              (too general to match)
+    Bad:  "charged twice in April after the account update failed on Android"
+          (so specific that the same failure in another form will never match it)
 - "es_queja": boolean. true if the person is expressing a problem or
   dissatisfaction; false for neutral questions, praise, or unrelated chatter. A
   mention can be classified and still not be a complaint.
