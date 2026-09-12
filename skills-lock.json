@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "channels-setup": {
+      "source": "CopilotKit/CopilotKit",
+      "sourceType": "github",
+      "skillPath": "skills/channels-setup/SKILL.md",
+      "computedHash": "8c3d3efd131fbea6d7b5934f8b0bd04ae357694ecd3fd38ccfdd1633f649c227"
+    }
+  }
+}
