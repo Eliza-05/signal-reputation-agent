@@ -85,8 +85,8 @@ barrido web (Exa) ───┘    (modelo)    (modelo)   (código puro)
 Requiere **Node.js 22+**.
 
 ```bash
-git clone https://github.com/Eliza-05/ECIMIND-TEAM.git
-cd ECIMIND-TEAM
+git clone https://github.com/Eliza-05/signal-reputation-agent.git
+cd signal-reputation-agent
 npm ci
 cp .env.example .env
 ```
